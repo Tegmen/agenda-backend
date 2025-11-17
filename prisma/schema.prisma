@@ -1,0 +1,107 @@
+// Prisma schema for Agenda Backend
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// User roles enum
+enum Role {
+  STUDENT
+  TEACHER
+  PRINCIPAL
+  ADMIN
+}
+
+// Entry types enum
+enum EntryType {
+  HOMEWORK
+  EVENT
+  EXAM
+  REMINDER
+  OTHER
+}
+
+// User model
+model User {
+  id        Int      @id @default(autoincrement())
+  username  String   @unique
+  password  String   // hashed with bcrypt
+  role      Role     @default(STUDENT)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  groups        UserGroup[]     // Groups this user belongs to
+  createdEntries Entry[]        @relation("EntryCreator")
+  editedEntries  Entry[]        @relation("EntryEditor")
+
+  @@index([username])
+}
+
+// Group model
+model Group {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  members   UserGroup[]
+  entries   Entry[]
+
+  @@index([name])
+}
+
+// Junction table for User-Group many-to-many relationship
+model UserGroup {
+  userId    Int
+  groupId   Int
+  addedAt   DateTime @default(now())
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([userId, groupId])
+  @@index([userId])
+  @@index([groupId])
+}
+
+// Entry model
+model Entry {
+  id          Int       @id @default(autoincrement())
+  title       String
+  description String    @db.Text
+  displayDate DateTime  // The date to display in the agenda (no time component)
+  type        EntryType @default(OTHER)
+
+  // Group assignment (group name = username for private entries)
+  groupId     Int
+  group       Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  // Creator information
+  createdById Int
+  createdBy   User      @relation("EntryCreator", fields: [createdById], references: [id])
+  createdAt   DateTime  @default(now())
+
+  // Edit tracking
+  updatedAt   DateTime  @updatedAt
+  editedById  Int?      // Null if never edited
+  editedBy    User?     @relation("EntryEditor", fields: [editedById], references: [id])
+
+  // Soft delete (entries are never actually deleted by students/teachers)
+  isDeleted   Boolean   @default(false)
+  deletedAt   DateTime?
+
+  @@index([groupId])
+  @@index([createdById])
+  @@index([displayDate])
+  @@index([isDeleted])
+  // Composite index for efficient week-based queries
+  @@index([groupId, displayDate, isDeleted])
+}
